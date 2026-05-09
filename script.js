@@ -9,6 +9,9 @@ let redoStack = [];
 let isRedoing = false;
 let isExporting = false;
 let lastSubTarget = null;
+let showGrid = false;
+let excelData = null; // Almacenará los datos del Excel para automatización
+const gridStep = 10 * SCALE; // Rejilla cada 10mm
 
 document.addEventListener('DOMContentLoaded', () => {
     initCanvas();
@@ -29,10 +32,36 @@ function initCanvas() {
     // Dibujar línea de corte fija por encima de todo
     canvas.on('after:render', function() {
         if (isExporting) return; // No dibujar en el PDF
+        
+        const ctx = canvas.getContext();
+        ctx.save();
+
+        // Dibujar Rejilla (Grid) y Medidas (mm)
+        if (showGrid) {
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)'; // Un poco más oscuro
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';    // Color para los números
+            ctx.font = '10px Arial';
+            ctx.lineWidth = 0.5;
+
+            // Verticales y números superiores
+            for (let i = 0; i <= (PAPER_W_MM * SCALE); i += gridStep) {
+                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, PAPER_H_MM * SCALE); ctx.stroke();
+                // Dibujar número cada 20mm para no saturar
+                if ((i / SCALE) % 20 === 0) {
+                    ctx.fillText(Math.round(i / SCALE) + 'mm', i + 2, 12);
+                }
+            }
+            // Horizontales y números laterales
+            for (let i = 0; i <= (PAPER_H_MM * SCALE); i += gridStep) {
+                ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(PAPER_W_MM * SCALE, i); ctx.stroke();
+                if ((i / SCALE) % 20 === 0 && i > 0) {
+                    ctx.fillText(Math.round(i / SCALE) + 'mm', 2, i - 2);
+                }
+            }
+        }
+
         const mode = document.getElementById('label-mode').value;
         if (mode === 'double') {
-            const ctx = canvas.getContext();
-            ctx.save();
             ctx.setLineDash([5, 5]);
             ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
             ctx.lineWidth = 1;
@@ -40,9 +69,11 @@ function initCanvas() {
             ctx.moveTo(0, (PAPER_H_MM / 2) * SCALE);
             ctx.lineTo(PAPER_W_MM * SCALE, (PAPER_H_MM / 2) * SCALE);
             ctx.stroke();
-            ctx.restore();
         }
+        ctx.restore();
     });
+
+    initSnapping();
 
     canvas.on('object:modified', () => saveState());
     canvas.on('object:moving', (options) => {
@@ -179,6 +210,8 @@ function setupEventListeners() {
         document.getElementById('pdf-upload').click();
     };
 
+    document.getElementById('add-white-cover').onclick = addWhiteCover;
+
     document.getElementById('add-excel').onclick = () => {
         document.getElementById('excel-upload').click();
     };
@@ -224,6 +257,11 @@ function setupEventListeners() {
         const obj = canvas.getActiveObject();
         if (obj) { obj.sendBackwards(); canvas.renderAll(); saveState(); }
     };
+
+    document.getElementById('btn-rot-ccw90').onclick = () => rotateSelected(-90);
+    document.getElementById('btn-rot-ccw15').onclick = () => rotateSelected(-15);
+    document.getElementById('btn-rot-cw15').onclick  = () => rotateSelected(15);
+    document.getElementById('btn-rot-cw90').onclick  = () => rotateSelected(90);
     document.getElementById('btn-crop').onclick = startCrop;
     document.getElementById('btn-confirm-crop').onclick = confirmCrop;
     document.getElementById('btn-delete').onclick = deleteSelected;
@@ -243,6 +281,18 @@ function setupEventListeners() {
 
     document.getElementById('zoom-in').onclick = () => changeZoom(0.1);
     document.getElementById('zoom-out').onclick = () => changeZoom(-0.1);
+    document.getElementById('show-grid').onchange = (e) => {
+        showGrid = e.target.checked;
+        canvas.renderAll();
+    };
+
+    // Botones de alineación
+    document.getElementById('align-left').onclick = () => alignSelected('left');
+    document.getElementById('align-center-h').onclick = () => alignSelected('center-h');
+    document.getElementById('align-right').onclick = () => alignSelected('right');
+    document.getElementById('align-top').onclick = () => alignSelected('top');
+    document.getElementById('align-center-v').onclick = () => alignSelected('center-v');
+    document.getElementById('align-bottom').onclick = () => alignSelected('bottom');
 
     // Teclas rápidas
     window.addEventListener('keydown', (e) => {
@@ -324,7 +374,141 @@ function setupEventListeners() {
 
     // Duplicar selección para etiqueta doble
     document.getElementById('btn-duplicate-double').onclick = duplicateSelectionForDouble;
+
+    // ── Menú contextual ──────────────────────────────────────
+    setupContextMenu();
+
+    // ── Zoom con rueda del ratón (Ctrl + scroll) ─────────────
+    document.getElementById('canvas-wrapper').addEventListener('wheel', (e) => {
+        if (!e.ctrlKey) return;
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 0.1 : -0.1;
+        changeZoom(delta);
+    }, { passive: false });
 }
+
+function setupContextMenu() {
+    const menu = document.getElementById('ctx-menu');
+
+    // Usamos el evento nativo sobre el contenedor para mayor fiabilidad
+    canvas.upperCanvasEl.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Encontrar objeto bajo el puntero usando coordenadas de Fabric
+        const pointer = canvas.getPointer(e);
+        const target = canvas.findTarget(e, false);
+
+        if (target && target.id !== 'split-line') {
+            canvas.setActiveObject(target);
+            canvas.renderAll();
+            
+            // Mostrar menú (primero invisible para calcular tamaño real)
+            menu.style.visibility = 'hidden';
+            menu.style.display = 'block';
+            
+            const mw = menu.offsetWidth;
+            const mh = menu.offsetHeight;
+            
+            menu.style.visibility = 'visible';
+
+            const x = e.clientX;
+            const y = e.clientY;
+            const winW = window.innerWidth;
+            const winH = window.innerHeight;
+
+            // Posicionamiento horizontal
+            let left = x;
+            if (x + mw > winW) {
+                left = x - mw;
+            }
+
+            // Posicionamiento vertical inteligente
+            let top = y;
+            if (y + mh > winH) {
+                // Si no cabe abajo, lo ponemos hacia arriba desde el cursor
+                top = y - mh;
+                // Si aún así se sale por arriba (pantalla muy pequeña), lo pegamos al borde superior
+                if (top < 10) top = 10;
+            }
+            
+            menu.style.left = left + 'px';
+            menu.style.top = top + 'px';
+        } else {
+            hideCtxMenu();
+        }
+    });
+
+    // Cerrar al hacer clic en cualquier otro sitio
+    document.addEventListener('click',     () => hideCtxMenu());
+    document.addEventListener('contextmenu', (e) => {
+        if (!e.target.closest('#ctx-menu')) hideCtxMenu();
+    });
+
+    // ── Acciones del menú ────────────────────────────────────
+
+    // Edición
+    document.getElementById('ctx-copy').onclick = () => {
+        const obj = canvas.getActiveObject();
+        if (obj) obj.clone(c => { clipboard = c; });
+        hideCtxMenu();
+    };
+    document.getElementById('ctx-paste').onclick = () => {
+        if (clipboard) {
+            clipboard.clone(cloned => {
+                canvas.discardActiveObject();
+                cloned.set({ left: (cloned.left||0) + 10*SCALE, top: (cloned.top||0) + 10*SCALE, evented: true });
+                if (cloned.type === 'activeSelection') {
+                    cloned.canvas = canvas;
+                    cloned.forEachObject(o => canvas.add(o));
+                    cloned.setCoords();
+                } else { canvas.add(cloned); }
+                canvas.setActiveObject(cloned);
+                canvas.requestRenderAll();
+                saveState();
+            });
+        }
+        hideCtxMenu();
+    };
+    document.getElementById('ctx-dup').onclick = () => {
+        const obj = canvas.getActiveObject();
+        if (obj) obj.clone(c => {
+            c.set({ left: (c.left||0) + 10*SCALE, top: (c.top||0) + 10*SCALE });
+            canvas.add(c); canvas.setActiveObject(c); canvas.renderAll(); saveState();
+        });
+        hideCtxMenu();
+    };
+
+    // Rotación
+    document.getElementById('ctx-r-ccw90').onclick = () => { rotateSelected(-90); hideCtxMenu(); };
+    document.getElementById('ctx-r-cw90').onclick  = () => { rotateSelected(90);  hideCtxMenu(); };
+
+    // Voltear
+    document.getElementById('ctx-flip-h').onclick = () => {
+        const obj = canvas.getActiveObject();
+        if (obj) { obj.set('flipX', !obj.flipX); canvas.renderAll(); saveState(); }
+        hideCtxMenu();
+    };
+    document.getElementById('ctx-flip-v').onclick = () => {
+        const obj = canvas.getActiveObject();
+        if (obj) { obj.set('flipY', !obj.flipY); canvas.renderAll(); saveState(); }
+        hideCtxMenu();
+    };
+
+    // Capas
+    document.getElementById('ctx-front').onclick   = () => { const o = canvas.getActiveObject(); if(o){ o.bringToFront();  canvas.renderAll(); saveState(); } hideCtxMenu(); };
+    document.getElementById('ctx-forward').onclick  = () => { const o = canvas.getActiveObject(); if(o){ o.bringForward(); canvas.renderAll(); saveState(); } hideCtxMenu(); };
+    document.getElementById('ctx-backward').onclick = () => { const o = canvas.getActiveObject(); if(o){ o.sendBackwards();canvas.renderAll(); saveState(); } hideCtxMenu(); };
+    document.getElementById('ctx-back').onclick     = () => { const o = canvas.getActiveObject(); if(o){ o.sendToBack();   canvas.renderAll(); saveState(); } hideCtxMenu(); };
+
+    // Eliminar
+    document.getElementById('ctx-delete').onclick = () => { deleteSelected(); hideCtxMenu(); };
+}
+
+function hideCtxMenu() {
+    document.getElementById('ctx-menu').style.display = 'none';
+}
+
 
 function updatePropertiesPanel() {
     const obj = canvas.getActiveObject();
@@ -402,6 +586,17 @@ function toggleStyle(prop, val1, val2) {
     if (!obj || obj.type !== 'i-text') return;
     obj.set(prop, obj[prop] === val1 ? val2 : val1);
     canvas.renderAll();
+    saveState();
+}
+
+function rotateSelected(delta) {
+    const obj = canvas.getActiveObject();
+    if (!obj) return;
+    const newAngle = ((obj.angle || 0) + delta + 360) % 360;
+    obj.rotate(newAngle);
+    obj.setCoords();
+    canvas.renderAll();
+    document.getElementById('prop-rotate').value = Math.round(newAngle);
     saveState();
 }
 
@@ -669,60 +864,86 @@ async function handlePDFUpload(e) {
     progressText.innerText = 'Cargando PDF...';
 
     try {
-        const reader = new FileReader();
-        reader.onload = async function() {
-            const typedarray = new Uint8Array(this.result);
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-            
-            const pdf = await pdfjsLib.getDocument(typedarray).promise;
-            const page = await pdf.getPage(1);
-           
-            // Intentar extraer texto real del PDF y dibujarlo como objetos editables
-            const viewport = page.getViewport({ scale: 2 });
-            const textContent = await page.getTextContent();
-            const canvasWidth = PAPER_W_MM * SCALE;
-            const canvasHeight = PAPER_H_MM * SCALE;
-            const pdfWidth = viewport.viewBox[2];
-            const pdfHeight = viewport.viewBox[3];
+        const arrayBuffer = await file.arrayBuffer();
+        const typedarray = new Uint8Array(arrayBuffer);
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-            const scaleX = canvasWidth / pdfWidth;
-            const scaleY = canvasHeight / pdfHeight;
+        const pdf = await pdfjsLib.getDocument(typedarray).promise;
+        const page = await pdf.getPage(1);
 
-            textContent.items.forEach(item => {
-                const tx = item.transform; // [scaleX, skewY, skewX, scaleY, x, y]
-                const fontSizePdf = Math.sqrt(tx[0] * tx[0] + tx[1] * tx[1]);
-                
-                // Convertir coordenadas PDF a Canvas (manteniendo proporciones)
-                const x = tx[4] * scaleX;
-                const y = canvasHeight - (tx[5] * scaleY);
+        const canvasWidth = PAPER_W_MM * SCALE;
+        const canvasHeight = PAPER_H_MM * SCALE;
 
-                const visualFontSize = fontSizePdf * scaleY;
+        // Calcular escala para que el PDF encaje exactamente en el lienzo
+        const pdfViewport0 = page.getViewport({ scale: 1 });
+        const scaleToFit = Math.min(
+            canvasWidth / pdfViewport0.width,
+            canvasHeight / pdfViewport0.height
+        );
 
-                const resolvedFont = resolveFontFromPdfJs(item.fontName);
-                const text = new fabric.IText(item.str, {
-                    left: x,
-                    top: y - visualFontSize, // ajustar baseline
-                    fontSize: visualFontSize,
-                    fontFamily: resolvedFont.fontFamily,
-                    fontStyle: resolvedFont.fontStyle,
-                    fontWeight: resolvedFont.fontWeight,
-                    fill: '#000000'
-                });
+        // Renderizar a 4× resolución para texto nítido (supersample)
+        const RENDER_SCALE = 4;
+        const viewport = page.getViewport({ scale: scaleToFit * RENDER_SCALE });
 
-                // Versión estable: solo texto editable, sin rectángulo automático
-                canvas.add(text);
+        progressText.innerText = 'Renderizando PDF (alta resolución)...';
+
+        // Renderizar la página en un canvas temporal off-screen a alta res
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = Math.round(viewport.width);
+        offCanvas.height = Math.round(viewport.height);
+        const ctx = offCanvas.getContext('2d');
+
+        await page.render({
+            canvasContext: ctx,
+            viewport: viewport
+        }).promise;
+
+        // Convertir a dataURL y añadir como imagen Fabric
+        const dataUrl = offCanvas.toDataURL('image/png');
+
+        fabric.Image.fromURL(dataUrl, (img) => {
+            img.set({
+                left: 0,
+                top: 0,
+                selectable: true,
+                evented: true,
+                hasControls: true,
+                hasBorders: true,
+                // Permite escalar ancho y alto de forma independiente
+                lockUniScaling: false
             });
-
+            // Ajustar al lienzo manteniendo la imagen visible completa
+            img.scaleToWidth(canvasWidth);
+            canvas.add(img);
+            // Seleccionar la imagen para poder redimensionarla inmediatamente
+            canvas.setActiveObject(img);
             updateSplitLine();
             saveState();
             overlay.style.display = 'none';
-        };
-        reader.readAsArrayBuffer(file);
+        });
     } catch (err) {
         console.error(err);
         alert("Error al cargar el PDF");
         overlay.style.display = 'none';
     }
+}
+
+// Añade un rectángulo blanco opaco para tapar zonas del diseño
+function addWhiteCover() {
+    const rect = new fabric.Rect({
+        left: 80 * SCALE,
+        top: 60 * SCALE,
+        width: 60 * SCALE,
+        height: 20 * SCALE,
+        fill: '#ffffff',
+        stroke: null,      // Sin borde para que sea invisible al imprimir
+        strokeWidth: 0,
+        opacity: 1
+    });
+    canvas.add(rect);
+    canvas.setActiveObject(rect);
+    canvas.renderAll();
+    saveState();
 }
 
 // Intenta aproximar la fuente del PDF usando el nombre que devuelve pdf.js.
@@ -750,35 +971,71 @@ async function handleExcelUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
 
+    const overlay = document.getElementById('loading-overlay');
+    const progressText = document.getElementById('progress-text');
+    overlay.style.display = 'flex';
+    progressText.innerText = 'Leyendo Excel...';
+
     const reader = new FileReader();
     reader.onload = function(evt) {
-        const data = new Uint8Array(evt.target.result);
-        const workbook = XLSX.read(data, {type: 'array'});
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+        try {
+            const data = new Uint8Array(evt.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            // Convertimos a JSON (array de arrays)
+            excelData = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+            
+            if (!excelData || excelData.length === 0) {
+                alert("El Excel parece estar vacío");
+                overlay.style.display = 'none';
+                return;
+            }
 
-        // Crear tabla en el canvas
-        let startX = 20 * SCALE;
-        let startY = 20 * SCALE;
-        const rowHeight = 10 * SCALE;
-        const colWidth = 40 * SCALE;
+            const importAsTable = confirm(`Se han cargado ${excelData.length} filas.\n\n¿Quieres importar las primeras filas como una TABLA en el diseño?\n(Cancela si prefieres usarlos para Automatización/Mail Merge)`);
 
-        jsonData.forEach((row, rowIndex) => {
-            row.forEach((cell, colIndex) => {
-                if (cell !== undefined && cell !== null && cell !== "") {
-                    const text = new fabric.IText(cell.toString(), {
-                        left: startX + (colIndex * colWidth),
-                        top: startY + (rowIndex * rowHeight),
-                        fontSize: 12 * SCALE,
-                        fontFamily: 'Arial'
+            if (importAsTable) {
+                progressText.innerText = 'Creando tabla...';
+                
+                // Optimizamos Fabric para inserción masiva
+                canvas.renderOnAddRemove = false;
+
+                let startX = 20 * SCALE;
+                let startY = 20 * SCALE;
+                const rowHeight = 10 * SCALE;
+                const colWidth = 40 * SCALE;
+
+                // Limitamos a 50 filas para la tabla visual para evitar bloqueos
+                const rowsToProcess = excelData.slice(0, 50);
+
+                rowsToProcess.forEach((row, rowIndex) => {
+                    row.forEach((cell, colIndex) => {
+                        if (cell !== undefined && cell !== null && cell !== "") {
+                            const text = new fabric.IText(cell.toString(), {
+                                left: startX + (colIndex * colWidth),
+                                top: startY + (rowIndex * rowHeight),
+                                fontSize: 10 * SCALE,
+                                fontFamily: 'Arial'
+                            });
+                            canvas.add(text);
+                        }
                     });
-                    canvas.add(text);
-                }
-            });
-        });
-        canvas.renderAll();
-        saveState();
+                });
+
+                canvas.renderOnAddRemove = true;
+                canvas.requestRenderAll();
+                saveState();
+                alert("Tabla creada. Se han limitado los datos a las primeras 50 filas para mantener el rendimiento.");
+            } else {
+                alert("Excel cargado correctamente para Automatización. Ahora puedes vincular campos a tus textos.");
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Error al procesar el archivo Excel");
+        } finally {
+            overlay.style.display = 'none';
+        }
     };
     reader.readAsArrayBuffer(file);
 }
@@ -973,6 +1230,61 @@ function handleTableMovement(obj) {
         });
     }
 }
+
+function alignSelected(type) {
+    const obj = canvas.getActiveObject();
+    if (!obj) return;
+
+    const canvasWidth = PAPER_W_MM * SCALE;
+    const canvasHeight = PAPER_H_MM * SCALE;
+
+    switch (type) {
+        case 'left':     obj.set({ left: 0 }); break;
+        case 'center-h': obj.centerH(); break;
+        case 'right':    obj.set({ left: canvasWidth - obj.getScaledWidth() }); break;
+        case 'top':      obj.set({ top: 0 }); break;
+        case 'center-v': obj.centerV(); break;
+        case 'bottom':   obj.set({ top: canvasHeight - obj.getScaledHeight() }); break;
+    }
+
+    obj.setCoords();
+    canvas.renderAll();
+    saveState();
+    updatePropertiesPanel();
+}
+
+function initSnapping() {
+    const snappingDistance = 10;
+    
+    canvas.on('object:moving', function(e) {
+        const obj = e.target;
+        const canvasWidth = PAPER_W_MM * SCALE;
+        const canvasHeight = PAPER_H_MM * SCALE;
+        const centerX = canvasWidth / 2;
+        const centerY = canvasHeight / 2;
+
+        // Snapping Horizontal (Centro)
+        if (Math.abs(obj.left + obj.getScaledWidth() / 2 - centerX) < snappingDistance) {
+            obj.set({ left: centerX - obj.getScaledWidth() / 2 });
+        }
+        // Snapping Horizontal (Bordes)
+        if (Math.abs(obj.left) < snappingDistance) obj.set({ left: 0 });
+        if (Math.abs(obj.left + obj.getScaledWidth() - canvasWidth) < snappingDistance) {
+            obj.set({ left: canvasWidth - obj.getScaledWidth() });
+        }
+
+        // Snapping Vertical (Centro)
+        if (Math.abs(obj.top + obj.getScaledHeight() / 2 - centerY) < snappingDistance) {
+            obj.set({ top: centerY - obj.getScaledHeight() / 2 });
+        }
+        // Snapping Vertical (Bordes)
+        if (Math.abs(obj.top) < snappingDistance) obj.set({ top: 0 });
+        if (Math.abs(obj.top + obj.getScaledHeight() - canvasHeight) < snappingDistance) {
+            obj.set({ top: canvasHeight - obj.getScaledHeight() });
+        }
+    });
+}
+
 
 
 

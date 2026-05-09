@@ -58,8 +58,9 @@
 
                 <div class="tool-group">
                     <h3>Importar</h3>
-                    <button class="tool-btn" id="add-pdf"><span>📄</span> PDF a Editable</button>
+                    <button class="tool-btn" id="add-pdf"><span>📄</span> Importar PDF</button>
                     <button class="tool-btn" id="add-excel"><span>📊</span> Excel a Tabla</button>
+                    <button class="tool-btn" id="add-white-cover" title="Añade un cuadrado blanco para tapar zonas del diseño" style="background: linear-gradient(135deg, #f0f0f0, #fff); color: #333; border: 1.5px solid #bbb;"><span>⬜</span> Tapar Zona</button>
                 </div>
 
                 <div class="tool-group">
@@ -70,6 +71,9 @@
                         <button id="zoom-out">-</button>
                         <span id="zoom-level">100%</span>
                         <button id="zoom-in">+</button>
+                    </div>
+                    <div class="grid-toggle-row">
+                        <label><input type="checkbox" id="show-grid"> Mostrar Cuadrícula (mm)</label>
                     </div>
                 </div>
 
@@ -114,6 +118,12 @@
                             <label>Rotación (°)</label>
                             <input type="number" id="prop-rotate" step="1">
                         </div>
+                        <div class="prop-row" style="flex-direction: row; gap: 6px; flex-wrap: wrap;">
+                            <button id="btn-rot-ccw90" title="-90°" style="flex:1; padding: 5px; background: #2a2a2a; border: 1px solid var(--border); color: white; border-radius: 4px; cursor: pointer; font-size: 13px;">↺90°</button>
+                            <button id="btn-rot-ccw15" title="-15°" style="flex:1; padding: 5px; background: #2a2a2a; border: 1px solid var(--border); color: white; border-radius: 4px; cursor: pointer; font-size: 13px;">↺15°</button>
+                            <button id="btn-rot-cw15"  title="+15°" style="flex:1; padding: 5px; background: #2a2a2a; border: 1px solid var(--border); color: white; border-radius: 4px; cursor: pointer; font-size: 13px;">↻15°</button>
+                            <button id="btn-rot-cw90"  title="+90°" style="flex:1; padding: 5px; background: #2a2a2a; border: 1px solid var(--border); color: white; border-radius: 4px; cursor: pointer; font-size: 13px;">↻90°</button>
+                        </div>
                         <div id="text-props" style="display:none">
                             <div class="prop-row">
                                 <label>Fuente</label>
@@ -134,6 +144,17 @@
                             </div>
                             <div class="prop-row checkbox-row">
                                 <label><input type="checkbox" id="prop-is-counter"> Es Numeración (1, 2, 3...)</label>
+                            </div>
+                        </div>
+                        <div class="prop-row">
+                            <label>Alineación respecto al papel</label>
+                            <div class="tool-grid-align">
+                                <button class="align-btn" id="align-left" title="Alinear a la izquierda">⇠</button>
+                                <button class="align-btn" id="align-center-h" title="Centrar horizontalmente">↔</button>
+                                <button class="align-btn" id="align-right" title="Alinear a la derecha">⇢</button>
+                                <button class="align-btn" id="align-top" title="Alinear arriba">⇡</button>
+                                <button class="align-btn" id="align-center-v" title="Centrar verticalmente">↕</button>
+                                <button class="align-btn" id="align-bottom" title="Alinear abajo">⇣</button>
                             </div>
                         </div>
                         <div class="prop-row">
@@ -158,6 +179,31 @@
             <p>Generando etiquetas... <span id="progress-text">0%</span></p>
         </div>
     </div>
+
+    <!-- Menú contextual (clic derecho sobre objetos) -->
+    <div id="ctx-menu">
+        <div class="ctx-group-label">Edición</div>
+        <div class="ctx-item" id="ctx-copy">   <span class="ctx-icon">📋</span> Copiar    <span class="ctx-shortcut">Ctrl+C</span></div>
+        <div class="ctx-item" id="ctx-paste">  <span class="ctx-icon">📌</span> Pegar     <span class="ctx-shortcut">Ctrl+V</span></div>
+        <div class="ctx-item" id="ctx-dup">    <span class="ctx-icon">⧉</span>  Duplicar</div>
+        <div class="ctx-sep"></div>
+        <div class="ctx-group-label">Rotación</div>
+        <div class="ctx-item" id="ctx-r-ccw90"><span class="ctx-icon">↺</span>  Rotar -90°</div>
+        <div class="ctx-item" id="ctx-r-cw90"> <span class="ctx-icon">↻</span>  Rotar +90°</div>
+        <div class="ctx-sep"></div>
+        <div class="ctx-group-label">Voltear</div>
+        <div class="ctx-item" id="ctx-flip-h"> <span class="ctx-icon">↔️</span> Voltear horizontal</div>
+        <div class="ctx-item" id="ctx-flip-v"> <span class="ctx-icon">↕️</span> Voltear vertical</div>
+        <div class="ctx-sep"></div>
+        <div class="ctx-group-label">Capas</div>
+        <div class="ctx-item" id="ctx-front">  <span class="ctx-icon">⬆️</span> Traer al frente</div>
+        <div class="ctx-item" id="ctx-forward"> <span class="ctx-icon">🔼</span> Traer adelante</div>
+        <div class="ctx-item" id="ctx-backward"><span class="ctx-icon">🔽</span> Enviar atrás</div>
+        <div class="ctx-item" id="ctx-back">   <span class="ctx-icon">⬇️</span> Enviar al fondo</div>
+        <div class="ctx-sep"></div>
+        <div class="ctx-item ctx-danger" id="ctx-delete"><span class="ctx-icon">🗑️</span> Eliminar <span class="ctx-shortcut">Supr</span></div>
+    </div>
+
     <script src="script.js"></script>
 </body>
 </html>

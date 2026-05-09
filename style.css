@@ -320,5 +320,108 @@ button#btn-undo, button#btn-redo {
     text-align: center;
 }
 
+.tool-grid-align {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    margin-top: 10px;
+}
+
+.align-btn {
+    background: #2a2a2a;
+    border: 1px solid var(--border);
+    color: white;
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.align-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.grid-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
 
 
+
+/* ── Menú contextual (clic derecho) ───────────────────── */
+#ctx-menu {
+    position: fixed;
+    z-index: 9999;
+    background: #1e1e2e;
+    border: 1px solid #3b3b55;
+    border-radius: 10px;
+    padding: 6px 0;
+    min-width: 200px;
+    max-height: calc(100vh - 20px);
+    overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    display: none;
+    animation: ctxFadeIn 0.12s ease;
+    user-select: none;
+}
+
+@keyframes ctxFadeIn {
+    from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+    to   { opacity: 1; transform: scale(1)   translateY(0); }
+}
+
+#ctx-menu .ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    font-size: 0.8rem;
+    color: #e2e8f0;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+#ctx-menu .ctx-item:hover {
+    background: #6366f122;
+    color: #a5b4fc;
+}
+
+#ctx-menu .ctx-item .ctx-icon {
+    font-size: 0.9rem;
+    width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+#ctx-menu .ctx-item .ctx-shortcut {
+    margin-left: auto;
+    font-size: 0.65rem;
+    color: #64748b;
+}
+
+#ctx-menu .ctx-sep {
+    height: 1px;
+    background: #334155;
+    margin: 2px 8px;
+}
+
+#ctx-menu .ctx-item.ctx-danger:hover {
+    background: #ef444422;
+    color: #f87171;
+}
+
+#ctx-menu .ctx-group-label {
+    padding: 2px 12px 0px;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #475569;
+}
