@@ -1077,18 +1077,42 @@ function startCrop() {
 function confirmCrop() {
     if (!cropRect || !imageToCrop) return;
 
-    // Usar un clipPath absoluto en coordenadas de lienzo para que funcione
-    // correctamente con imágenes de origen 'left/top' como las del PDF.
-    const clipPath = new fabric.Rect({
+    // 1. Crear el "hueco blanco" en la posición original (estilo Paint)
+    const hole = new fabric.Rect({
         left: cropRect.left,
         top: cropRect.top,
         width: cropRect.getScaledWidth(),
         height: cropRect.getScaledHeight(),
-        absolutePositioned: true
+        fill: '#ffffff',
+        selectable: true,
+        evented: true
+    });
+    canvas.add(hole);
+    // Lo ponemos justo detrás de la imagen que estamos recortando
+    hole.moveTo(canvas.getObjects().indexOf(imageToCrop));
+
+    // 2. Realizar el recorte real (destructivo) sobre la imagen
+    const vScaleX = imageToCrop.scaleX;
+    const vScaleY = imageToCrop.scaleY;
+
+    // Calculamos el desplazamiento relativo al origen de la imagen actual
+    const currentCropX = imageToCrop.cropX || 0;
+    const currentCropY = imageToCrop.cropY || 0;
+
+    const newCropX = currentCropX + (cropRect.left - imageToCrop.left) / vScaleX;
+    const newCropY = currentCropY + (cropRect.top - imageToCrop.top) / vScaleY;
+
+    imageToCrop.set({
+        cropX: newCropX,
+        cropY: newCropY,
+        width: cropRect.getScaledWidth() / vScaleX,
+        height: cropRect.getScaledHeight() / vScaleY,
+        left: cropRect.left,
+        top: cropRect.top,
+        clipPath: null // Eliminamos el sistema de clipPath antiguo
     });
 
-    imageToCrop.clipPath = clipPath;
-
+    // 3. Limpieza
     canvas.remove(cropRect);
     canvas.getObjects().forEach(obj => obj.selectable = true);
     canvas.setActiveObject(imageToCrop);
@@ -1116,6 +1140,32 @@ function createTable(rows, cols) {
     const cellH = 10 * SCALE;
 
     const tableId = 'table_' + Date.now();
+
+    // ASA DE SELECCIÓN (Estilo Word)
+    const handle = new fabric.Rect({
+        left: startX - 12,
+        top: startY - 12,
+        width: 15,
+        height: 15,
+        fill: '#6366f1',
+        cornerRadius: 3,
+        tableId: tableId,
+        role: 'table-selector',
+        hasControls: false,
+        hoverCursor: 'move'
+    });
+    // Añadir una pequeña cruz visual al asa
+    const handleText = new fabric.Text('✛', {
+        left: startX - 10,
+        top: startY - 13,
+        fontSize: 12,
+        fill: 'white',
+        selectable: false,
+        evented: false,
+        tableId: tableId,
+        role: 'table-selector-icon'
+    });
+    canvas.add(handle, handleText);
 
     // Líneas horizontales
     for (let i = 0; i <= rows; i++) {
@@ -1177,6 +1227,26 @@ function handleTableMovement(obj) {
 
     const tableParts = canvas.getObjects().filter(o => o.tableId === obj.tableId);
     
+    // Si movemos el ASA DE SELECCIÓN, movemos toda la tabla en bloque
+    if (obj.role === 'table-selector') {
+        const deltaX = obj.left - (obj._lastLeft || obj.left);
+        const deltaY = obj.top - (obj._lastTop || obj.top);
+
+        tableParts.forEach(part => {
+            if (part === obj) return;
+            part.set({
+                left: part.left + deltaX,
+                top: part.top + deltaY
+            });
+            part.setCoords();
+        });
+
+        obj._lastLeft = obj.left;
+        obj._lastTop = obj.top;
+        canvas.requestRenderAll();
+        return;
+    }
+
     if (obj.role === 'row-border') {
         const rowIdx = obj.rowIdx;
         // Encontrar líneas anterior y posterior para limitar movimiento
