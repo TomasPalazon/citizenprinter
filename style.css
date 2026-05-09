@@ -143,6 +143,14 @@ body {
     box-shadow: 0 20px 50px rgba(0,0,0,0.5);
     background: white;
     position: relative;
+    transition: all 0.3s ease;
+    border: 3px solid transparent;
+}
+
+#canvas-wrapper.drag-over {
+    border-color: var(--accent);
+    transform: scale(1.02);
+    box-shadow: 0 0 30px var(--accent);
 }
 
 /* Propiedades UI */

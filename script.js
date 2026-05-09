@@ -170,6 +170,7 @@ function setupEventListeners() {
     };
 
     document.getElementById('add-barcode').onclick = addBarcode;
+    document.getElementById('add-qrcode').onclick = addQRCode;
 
 
     // Formas solo con borde (sin relleno), útiles para marcos
@@ -231,22 +232,12 @@ function setupEventListeners() {
         document.getElementById('excel-upload').click();
     };
 
-    document.getElementById('img-upload').onchange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (f) => {
-            fabric.Image.fromURL(f.target.result, (img) => {
-                img.scaleToWidth(100 * SCALE);
-                canvas.add(img);
-                canvas.setActiveObject(img);
-            });
-        };
-        reader.readAsDataURL(file);
-    };
+    document.getElementById('img-upload').onchange = (e) => processImage(e.target.files[0]);
+    document.getElementById('pdf-upload').onchange = (e) => processPDF(e.target.files[0]);
+    document.getElementById('excel-upload').onchange = (e) => processExcel(e.target.files[0]);
 
-    document.getElementById('pdf-upload').onchange = handlePDFUpload;
-    document.getElementById('excel-upload').onchange = handleExcelUpload;
+    // Inicializar Drag and Drop
+    initDragAndDrop();
 
     // Propiedades
     const inputs = ['prop-x', 'prop-y', 'prop-w', 'prop-h', 'prop-rotate', 'prop-size', 'prop-font', 'prop-color'];
@@ -899,8 +890,7 @@ async function printLabels() {
 
 
 
-async function handlePDFUpload(e) {
-    const file = e.target.files[0];
+async function processPDF(file) {
     if (!file) return;
 
     const overlay = document.getElementById('loading-overlay');
@@ -1013,8 +1003,7 @@ function resolveFontFromPdfJs(fontName) {
     return { fontFamily, fontStyle, fontWeight };
 }
 
-async function handleExcelUpload(e) {
-    const file = e.target.files[0];
+async function processExcel(file) {
     if (!file) return;
 
     const overlay = document.getElementById('loading-overlay');
@@ -1403,6 +1392,32 @@ function initSnapping() {
     });
 }
 
+function addQRCode() {
+    const text = prompt("Introduce el enlace o texto para el QR:", "https://");
+    if (!text) return;
+
+    // Usamos una API externa para generar el QR (más fiable)
+    const url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}`;
+    
+    fabric.Image.fromURL(url, (img) => {
+        if (!img) {
+            alert("Error al cargar el código QR. Revisa tu conexión.");
+            return;
+        }
+        img.set({
+            left: 100,
+            top: 100,
+            scaleX: (40 * SCALE) / 300,
+            scaleY: (40 * SCALE) / 300,
+            id: 'qrcode-obj'
+        });
+        canvas.add(img);
+        canvas.setActiveObject(img);
+        canvas.renderAll();
+        saveState();
+    }, { crossOrigin: 'anonymous' });
+}
+
 function addBarcode() {
     let code = prompt("Introduce el código:\n- 18 cifras (CODE128)\n- 5 cifras (EAN-13 Interno)\n- 12/13 cifras (EAN-13 Estándar)", "");
     if (!code) return;
@@ -1449,10 +1464,62 @@ function addBarcode() {
         alert("Error: El código no es válido para " + format + ". Revisa la longitud.");
     }
 }
+function processImage(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (f) => {
+        fabric.Image.fromURL(f.target.result, (img) => {
+            img.scaleToWidth(100 * SCALE);
+            canvas.add(img);
+            canvas.setActiveObject(img);
+        });
+    };
+    reader.readAsDataURL(file);
+}
 
+function initDragAndDrop() {
+    const wrapper = document.getElementById('canvas-wrapper');
 
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        wrapper.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        }, false);
+    });
 
+    ['dragenter', 'dragover'].forEach(eventName => {
+        wrapper.addEventListener(eventName, () => {
+            wrapper.classList.add('drag-over');
+        }, false);
+    });
 
+    ['dragleave', 'drop'].forEach(eventName => {
+        wrapper.addEventListener(eventName, () => {
+            wrapper.classList.remove('drag-over');
+        }, false);
+    });
+
+    wrapper.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        handleFiles(files);
+    }, false);
+}
+
+function handleFiles(files) {
+    [...files].forEach(file => {
+        const name = file.name.toLowerCase();
+        if (name.endsWith('.pdf')) {
+            processPDF(file);
+        } else if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.csv')) {
+            processExcel(file);
+        } else if (file.type.startsWith('image/')) {
+            processImage(file);
+        } else {
+            alert("Formato no soportado: " + file.name);
+        }
+    });
+}
 
 
 
