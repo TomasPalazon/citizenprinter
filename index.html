@@ -10,6 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Playfair+Display:wght@400;700&family=Lato:wght@400;700&family=Open+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 
@@ -63,6 +64,7 @@
                 <div class="tool-group">
                     <h3>Importar</h3>
                     <button class="tool-btn" id="add-pdf"><span>📄</span> Importar PDF</button>
+                    <button class="tool-btn" id="add-docx"><span>📝</span> Importar DOCX</button>
                     <button class="tool-btn" id="add-excel"><span>📊</span> Excel a Tabla</button>
                     <button class="tool-btn" id="add-white-cover" title="Añade un cuadrado blanco para tapar zonas del diseño" style="background: linear-gradient(135deg, #f0f0f0, #fff); color: #333; border: 1.5px solid #bbb;"><span>⬜</span> Tapar Zona</button>
                 </div>
@@ -79,6 +81,7 @@
                 </div>
                 <input type="file" id="img-upload" style="display:none" accept="image/*">
                 <input type="file" id="pdf-upload" style="display:none" accept="application/pdf">
+                <input type="file" id="docx-upload" style="display:none" accept=".docx">
                 <input type="file" id="excel-upload" style="display:none" accept=".xlsx, .xls, .csv">
             </aside>
 

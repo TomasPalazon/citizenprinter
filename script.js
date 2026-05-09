@@ -22,14 +22,15 @@ document.addEventListener('DOMContentLoaded', () => {
 function initCanvas() {
     // Configuración global de selección para mayor visibilidad (Contraste alto)
     fabric.Object.prototype.set({
-        transparentCorners: false,
-        cornerColor: '#2563eb',      // Azul intenso
-        cornerStrokeColor: '#ffffff', // Borde blanco para los cuadraditos
-        borderColor: '#2563eb',       // Borde de selección azul
-        cornerSize: 12,               // Cuadraditos más grandes
-        borderScaleFactor: 2.5,       // Línea de borde más gruesa
+        transparentCorners: true,     // Esquinas huecas para ver lo que hay debajo
+        cornerColor: 'rgba(37, 99, 235, 0.5)', // Azul semi-transparente
+        cornerStrokeColor: '#2563eb', // Borde azul sólido
+        borderColor: '#2563eb',
+        cornerSize: 8,                // Tamaño más equilibrado
+        padding: 5,                   // Margen entre el objeto y los controles para no tapar el borde
+        borderScaleFactor: 1.5,
         cornerStyle: 'rect',
-        rotatingPointOffset: 40       // Alejar un poco el control de rotación
+        rotatingPointOffset: 40
     });
 
     canvas = new fabric.Canvas('label-canvas', {
@@ -226,6 +227,10 @@ function setupEventListeners() {
         document.getElementById('pdf-upload').click();
     };
 
+    document.getElementById('add-docx').onclick = () => {
+        document.getElementById('docx-upload').click();
+    };
+
     document.getElementById('add-white-cover').onclick = addWhiteCover;
 
     document.getElementById('add-excel').onclick = () => {
@@ -234,6 +239,7 @@ function setupEventListeners() {
 
     document.getElementById('img-upload').onchange = (e) => processImage(e.target.files[0]);
     document.getElementById('pdf-upload').onchange = (e) => processPDF(e.target.files[0]);
+    document.getElementById('docx-upload').onchange = (e) => processDocx(e.target.files[0]);
     document.getElementById('excel-upload').onchange = (e) => processExcel(e.target.files[0]);
 
     // Inicializar Drag and Drop
@@ -1075,6 +1081,81 @@ async function processExcel(file) {
     reader.readAsArrayBuffer(file);
 }
 
+async function processDocx(file) {
+    if (!file) return;
+
+    const overlay = document.getElementById('loading-overlay');
+    const progressText = document.getElementById('progress-text');
+    overlay.style.display = 'flex';
+    progressText.innerText = 'Convirtiendo DOCX con formato...';
+
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        
+        // Convertimos a HTML para preservar tablas y estructura
+        const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+        const html = result.value;
+        
+        if (!html.trim()) {
+            alert("No se pudo extraer contenido del archivo DOCX o está vacío.");
+            overlay.style.display = 'none';
+            return;
+        }
+
+        // Para renderizar HTML en el Canvas de Fabric, usamos el truco del SVG foreignObject
+        // Esto permite mantener el formato original (tablas, negritas, etc.)
+        const canvasWidth = PAPER_W_MM * SCALE;
+        const tempWidth = 800; // Ancho virtual para el renderizado
+        
+        const svg = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="${tempWidth}" height="1200">
+                <foreignObject width="100%" height="100%">
+                    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: black; background: white; padding: 10px;">
+                        <style>
+                            table { border-collapse: collapse; width: 100%; margin-bottom: 5px; table-layout: fixed; }
+                            table, td, th { border: 1px solid black; }
+                            td, th { padding: 3px 5px; text-align: left; overflow: hidden; word-wrap: break-word; }
+                            p { margin: 0; line-height: 1.2; }
+                            img { max-width: 100%; height: auto; }
+                        </style>
+                        ${html}
+                    </div>
+                </foreignObject>
+            </svg>
+        `;
+
+        const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        
+        fabric.Image.fromURL(url, (img) => {
+            if (!img) {
+                throw new Error("Error al crear la imagen del DOCX");
+            }
+
+            img.set({
+                left: 10 * SCALE,
+                top: 10 * SCALE,
+                selectable: true,
+                evented: true
+            });
+
+            // Ajustar el tamaño si es muy grande
+            if (img.width > canvasWidth) {
+                img.scaleToWidth(canvasWidth - 20 * SCALE);
+            }
+
+            canvas.add(img);
+            canvas.setActiveObject(img);
+            saveState();
+            overlay.style.display = 'none';
+        }, { crossOrigin: 'anonymous' });
+
+    } catch (err) {
+        console.error(err);
+        alert("Error al procesar el archivo DOCX con formato");
+        overlay.style.display = 'none';
+    }
+}
+
 let cropRect;
 let imageToCrop;
 
@@ -1511,6 +1592,8 @@ function handleFiles(files) {
         const name = file.name.toLowerCase();
         if (name.endsWith('.pdf')) {
             processPDF(file);
+        } else if (name.endsWith('.docx')) {
+            processDocx(file);
         } else if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.csv')) {
             processExcel(file);
         } else if (file.type.startsWith('image/')) {
