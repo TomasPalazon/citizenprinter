@@ -38,9 +38,9 @@ function initCanvas() {
 
         // Dibujar Rejilla (Grid) y Medidas (mm)
         if (showGrid) {
-            ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)'; // Un poco más oscuro
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';    // Color para los números
-            ctx.font = '10px Arial';
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)'; // Más oscuro
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';    // Números más legibles
+            ctx.font = 'bold 11px Arial';
             ctx.lineWidth = 0.5;
 
             // Verticales y números superiores
@@ -148,14 +148,17 @@ function setupEventListeners() {
 
     document.getElementById('add-circle').onclick = () => {
         const circle = new fabric.Circle({
+            radius: 25 * SCALE,
             left: 100,
             top: 100,
-            fill: '#000000',
-            radius: 25 * SCALE
+            fill: '#000000'
         });
         canvas.add(circle);
         canvas.setActiveObject(circle);
     };
+
+    document.getElementById('add-barcode').onclick = addBarcode;
+
 
     // Formas solo con borde (sin relleno), útiles para marcos
     document.getElementById('add-rect-outline').onclick = () => {
@@ -372,8 +375,6 @@ function setupEventListeners() {
     document.getElementById('btn-undo').onclick = undo;
     document.getElementById('btn-redo').onclick = redo;
 
-    // Duplicar selección para etiqueta doble
-    document.getElementById('btn-duplicate-double').onclick = duplicateSelectionForDouble;
 
     // ── Menú contextual ──────────────────────────────────────
     setupContextMenu();
@@ -1354,6 +1355,55 @@ function initSnapping() {
         }
     });
 }
+
+function addBarcode() {
+    let code = prompt("Introduce el código:\n- 18 cifras (CODE128)\n- 5 cifras (EAN-13 Interno)\n- 12/13 cifras (EAN-13 Estándar)", "");
+    if (!code) return;
+
+    let format = "CODE128";
+    
+    // Lógica especial para tus 5 cifras de producto -> EAN-13 Interno
+    if (code.length === 5) {
+        const prefix = "2000000"; // Prefijo de uso interno estándar
+        code = prefix + code;     // 7 + 5 = 12 cifras (JsBarcode añadirá la 13 automáticamente)
+        format = "EAN13";
+        alert("Generando EAN-13 Interno: " + code + " (más dígito de control)");
+    } else if (code.length === 12 || code.length === 13) {
+        format = "EAN13";
+    } else if (code.length === 18) {
+        format = "CODE128";
+    }
+
+    const tempCanvas = document.createElement('canvas');
+    try {
+        JsBarcode(tempCanvas, code, {
+            format: format,
+            width: 2,
+            height: 100,
+            displayValue: true,
+            fontSize: 18,
+            background: "#ffffff"
+        });
+
+        const imgData = tempCanvas.toDataURL("image/png");
+        fabric.Image.fromURL(imgData, (img) => {
+            img.set({
+                left: 100,
+                top: 100,
+                scaleX: SCALE / 4,
+                scaleY: SCALE / 4,
+                id: 'barcode-obj'
+            });
+            canvas.add(img);
+            canvas.setActiveObject(img);
+            saveState();
+        });
+    } catch (err) {
+        alert("Error: El código no es válido para " + format + ". Revisa la longitud.");
+    }
+}
+
+
 
 
 

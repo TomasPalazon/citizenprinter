@@ -291,33 +291,70 @@ button#btn-undo, button#btn-redo {
     color: white !important;
 }
 
-.zoom-controls {
+.canvas-area {
+    flex: 1;
+    background: #1a1a1a;
+    overflow: auto;
     display: flex;
-    align-items: center;
     justify-content: center;
-    gap: 15px;
-    margin-top: 15px;
-    background: #2a2a2a;
-    padding: 8px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
+    align-items: center;
+    position: relative;
 }
 
-.zoom-controls button {
-    background: var(--sidebar-bg);
-    border: 1px solid var(--border);
-    color: white;
-    width: 30px;
-    height: 30px;
-    border-radius: 4px;
+.zoom-controls-floating {
+    position: fixed !important;
+    top: 80px !important; /* Bajado para no tapar el header */
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    display: flex !important;
+    align-items: center !important;
+    background: #000000 !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    padding: 4px 12px !important; /* Más compacto */
+    border-radius: 50px !important;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
+    z-index: 100000 !important;
+}
+
+.zoom-controls-floating button {
+    background: #1e1e2e !important;
+    color: #ffffff !important;
+    border: none !important;
+    width: 28px !important; /* Más pequeño */
+    height: 28px !important; /* Más pequeño */
+    border-radius: 50% !important;
+    cursor: pointer !important;
+    font-size: 1rem !important;
+    margin: 0 3px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.zoom-controls-floating span {
+    font-size: 0.8rem !important; /* Texto más pequeño */
+    font-weight: bold !important;
+    min-width: 45px !important;
+    color: #fff !important;
+}
+
+
+.grid-toggle-compact {
+    margin-left: 15px !important;
+    border-left: 1px solid #444 !important;
+    padding-left: 15px !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+
+.grid-toggle-compact:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.grid-toggle-compact input {
     cursor: pointer;
-}
-
-.zoom-controls span {
-    font-size: 0.85rem;
-    font-weight: 600;
-    min-width: 45px;
-    text-align: center;
+    margin-right: 6px;
 }
 
 .tool-grid-align {

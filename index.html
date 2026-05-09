@@ -9,6 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 </head>
 
 
@@ -51,6 +52,7 @@
                         <button class="tool-btn-mini" id="add-rect" title="Rectángulo relleno">⬛</button>
                         <button class="tool-btn-mini" id="add-circle" title="Círculo relleno">⚪</button>
                         <button class="tool-btn-mini" id="add-line" title="Línea">➖</button>
+                        <button class="tool-btn-mini" id="add-barcode" title="Código de Barras">📊</button>
                         <button class="tool-btn-mini" id="add-rect-outline" title="Rectángulo vacío">⬜</button>
                         <button class="tool-btn-mini" id="add-circle-outline" title="Círculo vacío">⭕</button>
                     </div>
@@ -66,15 +68,6 @@
                 <div class="tool-group">
                     <h3>Lienzo</h3>
                     <button class="tool-btn danger-outline" id="btn-clear"><span>🗑️</span> Borrar Todo</button>
-                    <button class="tool-btn" id="btn-duplicate-double"><span>➕</span> Duplicar en etiqueta inferior</button>
-                    <div class="zoom-controls">
-                        <button id="zoom-out">-</button>
-                        <span id="zoom-level">100%</span>
-                        <button id="zoom-in">+</button>
-                    </div>
-                    <div class="grid-toggle-row">
-                        <label><input type="checkbox" id="show-grid"> Mostrar Cuadrícula (mm)</label>
-                    </div>
                 </div>
 
                 <div class="tool-group">
@@ -88,8 +81,22 @@
             </aside>
 
             <section class="canvas-area">
-                <div id="canvas-wrapper">
+                <div id="canvas-wrapper" class="canvas-wrapper">
                     <canvas id="label-canvas"></canvas>
+                </div>
+
+                <!-- Panel de Ayudas Visuales Flotante (Fuera del papel) -->
+                <div class="zoom-controls-floating">
+                    <button id="zoom-out" title="Alejar">−</button>
+                    <span id="zoom-level">100%</span>
+                    <button id="zoom-in" title="Acercar">+</button>
+                    
+                    <div class="divider-v"></div>
+                    
+                    <label class="grid-toggle-compact" title="Mostrar Cuadrícula (mm)">
+                        <input type="checkbox" id="show-grid">
+                        <span>📏</span>
+                    </label>
                 </div>
             </section>
 
