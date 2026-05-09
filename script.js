@@ -20,6 +20,18 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initCanvas() {
+    // Configuración global de selección para mayor visibilidad (Contraste alto)
+    fabric.Object.prototype.set({
+        transparentCorners: false,
+        cornerColor: '#2563eb',      // Azul intenso
+        cornerStrokeColor: '#ffffff', // Borde blanco para los cuadraditos
+        borderColor: '#2563eb',       // Borde de selección azul
+        cornerSize: 12,               // Cuadraditos más grandes
+        borderScaleFactor: 2.5,       // Línea de borde más gruesa
+        cornerStyle: 'rect',
+        rotatingPointOffset: 40       // Alejar un poco el control de rotación
+    });
+
     canvas = new fabric.Canvas('label-canvas', {
         width: PAPER_W_MM * SCALE,
         height: PAPER_H_MM * SCALE,
@@ -686,6 +698,14 @@ async function exportPDF() {
     progressText.innerText = 'Iniciando...';
     isExporting = true;
 
+    // Ocultar bordes de los "tapar zona" para la exportación
+    canvas.getObjects().forEach(obj => {
+        if (obj.isWhiteCover) {
+            obj.set({ stroke: null, strokeWidth: 0 });
+        }
+    });
+    canvas.renderAll();
+
     try {
         if (!window.jspdf || !window.jspdf.jsPDF) {
             throw new Error("Librería jsPDF no cargada correctamente.");
@@ -749,6 +769,14 @@ async function exportPDF() {
         alert("Hubo un error al generar el PDF. Por favor, revisa la consola.");
     } finally {
         isExporting = false;
+        
+        // Restaurar bordes de los "tapar zona" tras la exportación
+        canvas.getObjects().forEach(obj => {
+            if (obj.isWhiteCover) {
+                obj.set({ stroke: '#cccccc', strokeWidth: 1 });
+            }
+        });
+
         canvas.renderAll();
         setTimeout(() => { overlay.style.display = 'none'; }, 500);
     }
@@ -763,6 +791,14 @@ async function printLabels() {
     overlay.style.display = 'flex';
     progressText.innerText = 'Preparando impresión...';
     isExporting = true;
+
+    // Ocultar bordes de los "tapar zona" para la impresión
+    canvas.getObjects().forEach(obj => {
+        if (obj.isWhiteCover) {
+            obj.set({ stroke: null, strokeWidth: 0 });
+        }
+    });
+    canvas.renderAll();
 
     try {
         const printWindow = window.open('', '_blank');
@@ -848,6 +884,14 @@ async function printLabels() {
         alert("Error al imprimir");
     } finally {
         isExporting = false;
+
+        // Restaurar bordes de los "tapar zona" tras la impresión
+        canvas.getObjects().forEach(obj => {
+            if (obj.isWhiteCover) {
+                obj.set({ stroke: '#cccccc', strokeWidth: 1 });
+            }
+        });
+
         canvas.renderAll();
         overlay.style.display = 'none';
     }
@@ -937,9 +981,10 @@ function addWhiteCover() {
         width: 60 * SCALE,
         height: 20 * SCALE,
         fill: '#ffffff',
-        stroke: null,      // Sin borde para que sea invisible al imprimir
-        strokeWidth: 0,
-        opacity: 1
+        stroke: '#cccccc', // Borde gris claro para visibilidad en edición
+        strokeWidth: 1,
+        opacity: 1,
+        isWhiteCover: true // Marcador para ocultar el borde al exportar
     });
     canvas.add(rect);
     canvas.setActiveObject(rect);
@@ -1058,15 +1103,17 @@ function startCrop() {
 
     cropRect = new fabric.Rect({
         fill: 'rgba(255,255,255,0.3)',
-        stroke: '#3b82f6',
+        stroke: '#2563eb',
         strokeWidth: 2,
         strokeDashArray: [5, 5],
         width: imageToCrop.getScaledWidth() / 2,
         height: imageToCrop.getScaledHeight() / 2,
         left: imageToCrop.left,
         top: imageToCrop.top,
-        cornerColor: '#3b82f6',
-        cornerSize: 8,
+        cornerColor: '#2563eb',
+        cornerStrokeColor: '#ffffff',
+        cornerSize: 12,
+        transparentCorners: false,
         hasRotatingPoint: false
     });
 
