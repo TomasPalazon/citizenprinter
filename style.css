@@ -470,3 +470,105 @@ button#btn-undo, button#btn-redo {
     letter-spacing: 0.07em;
     color: #475569;
 }
+
+/* ── Panel de Capas (Blender Style) ─────────────────────── */
+.layers-panel {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 240px;
+    max-height: calc(100vh - 200px);
+    background: rgba(20, 20, 20, 0.8);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    z-index: 50;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+    overflow: hidden;
+}
+
+.layers-header {
+    padding: 12px 15px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.layers-list {
+    overflow-y: auto;
+    padding: 5px 0;
+    scrollbar-width: thin;
+    scrollbar-color: #444 transparent;
+}
+
+.layer-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: #cbd5e1;
+    transition: all 0.2s;
+    border-left: 3px solid transparent;
+}
+
+.layer-item:hover {
+    background: rgba(255,255,255,0.05);
+    color: #fff;
+}
+
+.layer-item.active {
+    background: rgba(99, 102, 241, 0.2);
+    border-left-color: var(--accent);
+    color: #fff;
+}
+
+.layer-item .layer-type {
+    font-size: 0.8rem;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.layer-item .layer-name {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.layer-item .layer-actions {
+    display: flex;
+    gap: 4px;
+    opacity: 0.3;
+    transition: opacity 0.2s;
+}
+
+.layer-item:hover .layer-actions {
+    opacity: 1;
+}
+
+.layer-action {
+    padding: 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.7rem;
+    background: rgba(0,0,0,0.3);
+}
+
+.layer-action:hover {
+    background: var(--accent);
+    color: white;
+}

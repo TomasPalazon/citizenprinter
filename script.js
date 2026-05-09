@@ -96,12 +96,15 @@ function initCanvas() {
     canvas.on('object:scaling', updatePropertiesPanel);
     canvas.on('object:added', () => {
         if (!isRedoing) saveState();
+        updateLayersPanel();
     });
-    canvas.on('selection:created', updatePropertiesPanel);
-    canvas.on('selection:updated', updatePropertiesPanel);
+    canvas.on('object:removed', updateLayersPanel);
+    canvas.on('selection:created', () => { updatePropertiesPanel(); updateLayersPanel(); });
+    canvas.on('selection:updated', () => { updatePropertiesPanel(); updateLayersPanel(); });
     canvas.on('selection:cleared', () => {
         hidePropertiesPanel();
         lastSubTarget = null;
+        updateLayersPanel();
     });
 
     canvas.on('mouse:down', (options) => {
@@ -111,6 +114,8 @@ function initCanvas() {
             lastSubTarget = options.target;
         }
     });
+
+    updateLayersPanel();
 }
 
 function updateSplitLine() {
@@ -316,6 +321,10 @@ function setupEventListeners() {
                 deleteSelected();
             }
         }
+        if (e.key === 'Escape') {
+            canvas.discardActiveObject();
+            canvas.requestRenderAll();
+        }
         if (e.ctrlKey && e.key === 'z') undo();
         if (e.ctrlKey && e.key === 'y') redo();
 
@@ -387,6 +396,15 @@ function setupEventListeners() {
 
     // ── Menú contextual ──────────────────────────────────────
     setupContextMenu();
+
+    // Deseleccionar al hacer clic en la zona gris (fuera del papel)
+    document.querySelector('.canvas-area').addEventListener('mousedown', (e) => {
+        // Si el clic fue directamente en el área gris o el wrapper, deseleccionamos
+        if (e.target.classList.contains('canvas-area') || e.target.id === 'canvas-wrapper') {
+            canvas.discardActiveObject();
+            canvas.requestRenderAll();
+        }
+    });
 
     // ── Zoom con rueda del ratón (Ctrl + scroll) ─────────────
     document.getElementById('canvas-wrapper').addEventListener('wheel', (e) => {
@@ -1603,6 +1621,72 @@ function handleFiles(files) {
         }
     });
 }
+// ── Lógica del Panel de Capas (Blender Style) ────────────
 
+function updateLayersPanel() {
+    const list = document.getElementById('layers-list');
+    if (!list) return;
 
+    list.innerHTML = '';
+    const objects = canvas.getObjects().filter(obj => obj.id !== 'split-line');
+    const activeObjects = canvas.getActiveObjects();
+
+    // Revertimos para que la capa superior esté arriba en la lista (Estilo Blender/Photoshop)
+    [...objects].reverse().forEach(obj => {
+        const item = document.createElement('div');
+        item.className = 'layer-item';
+        if (activeObjects.includes(obj)) item.classList.add('active');
+
+        // Determinar icono según tipo
+        let icon = '🔳';
+        if (obj.type === 'i-text' || obj.type === 'text') icon = '📝';
+        if (obj.type === 'image') icon = '🖼️';
+        if (obj.type === 'rect' && obj.isWhiteCover) icon = '⬜';
+        if (obj.id === 'barcode-obj') icon = '📊';
+        if (obj.id === 'qrcode-obj') icon = '📱';
+
+        // Nombre descriptivo
+        let name = obj.type.charAt(0).toUpperCase() + obj.type.slice(1);
+        if (obj.text) name = obj.text.substring(0, 15) + (obj.text.length > 15 ? '...' : '');
+        if (obj.isWhiteCover) name = "Tapar Zona";
+        if (obj.id === 'barcode-obj') name = "Código Barras";
+        if (obj.id === 'qrcode-obj') name = "Código QR";
+
+        item.innerHTML = `
+            <div class="layer-type">${icon}</div>
+            <div class="layer-name">${name}</div>
+            <div class="layer-actions">
+                <div class="layer-action" title="Traer Adelante" onclick="event.stopPropagation(); moveLayerById('${obj.cacheKey || objects.indexOf(obj)}', 'up')">🔼</div>
+                <div class="layer-action" title="Enviar Atrás" onclick="event.stopPropagation(); moveLayerById('${obj.cacheKey || objects.indexOf(obj)}', 'down')">🔽</div>
+            </div>
+        `;
+
+        item.onclick = () => {
+            canvas.setActiveObject(obj);
+            canvas.requestRenderAll();
+        };
+
+        list.appendChild(item);
+    });
+}
+
+function moveLayerById(id, direction) {
+    const objects = canvas.getObjects();
+    // Buscamos el objeto por índice o por alguna propiedad única si la tuviera
+    // Para simplificar, usamos el índice actual en el array filtrado
+    const filteredObjects = objects.filter(obj => obj.id !== 'split-line');
+    const obj = filteredObjects[parseInt(id)] || objects.find(o => o.cacheKey === id);
+    
+    if (!obj) return;
+
+    if (direction === 'up') {
+        obj.bringForward();
+    } else {
+        obj.sendBackwards();
+    }
+
+    canvas.renderAll();
+    saveState();
+    updateLayersPanel();
+}
 
