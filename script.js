@@ -7,6 +7,29 @@ let clipboard = null;
 let undoStack = [];
 let redoStack = [];
 let isRedoing = false;
+
+// Crear clase personalizada para el contador que preserve la propiedad isCounter
+fabric.CounterText = fabric.util.createClass(fabric.IText, {
+    type: 'counterText',
+    
+    initialize: function(text, options) {
+        options = options || {};
+        this.callSuper('initialize', text, options);
+        this.isCounter = options.isCounter !== undefined ? options.isCounter : true;
+    },
+    
+    toObject: function(propertiesToInclude) {
+        return this.callSuper('toObject', ['isCounter'].concat(propertiesToInclude || []));
+    }
+});
+
+// Registrar la clase personalizada
+fabric.CounterText.fromObject = function(object, callback) {
+    return fabric.IText.fromObject(object, function(textObj) {
+        textObj.isCounter = object.isCounter;
+        callback && callback(textObj);
+    });
+};
 let isExporting = false;
 let lastSubTarget = null;
 let showGrid = false;
@@ -140,13 +163,12 @@ function setupEventListeners() {
     };
 
     document.getElementById('add-counter').onclick = () => {
-        const text = new fabric.IText('1', {
+        const text = new fabric.CounterText('1', {
             left: 50,
             top: 50,
             fontSize: 30 * SCALE,
             fontFamily: 'Arial',
-            fontWeight: 'bold',
-            isCounter: true
+            fontWeight: 'bold'
         });
         canvas.add(text);
         canvas.setActiveObject(text);
@@ -333,6 +355,8 @@ function setupEventListeners() {
             if (activeObj) {
                 activeObj.clone((cloned) => {
                     clipboard = cloned;
+                    // Copiar al portapapeles del sistema
+                    copyToSystemClipboard(activeObj);
                 });
             }
         }
@@ -361,6 +385,9 @@ function setupEventListeners() {
                     canvas.requestRenderAll();
                     saveState();
                 });
+            } else {
+                // Intentar pegar desde el portapapeles del sistema (Excel, etc.)
+                pasteFromSystemClipboard();
             }
         }
 
@@ -478,7 +505,12 @@ function setupContextMenu() {
     // Edición
     document.getElementById('ctx-copy').onclick = () => {
         const obj = canvas.getActiveObject();
-        if (obj) obj.clone(c => { clipboard = c; });
+        if (obj) {
+            obj.clone(c => { 
+                clipboard = c; 
+                copyToSystemClipboard(obj);
+            });
+        }
         hideCtxMenu();
     };
     document.getElementById('ctx-paste').onclick = () => {
@@ -535,6 +567,222 @@ function setupContextMenu() {
 
 function hideCtxMenu() {
     document.getElementById('ctx-menu').style.display = 'none';
+}
+
+async function copyToSystemClipboard(obj) {
+    try {
+        // Crear un canvas temporal para renderizar solo el objeto seleccionado
+        const tempCanvas = document.createElement('canvas');
+        const ctx = tempCanvas.getContext('2d');
+        
+        // Obtener las dimensiones del objeto con mejor precisión
+        let width, height;
+        
+        if (obj.type === 'activeSelection') {
+            // Para selecciones múltiples, calcular el bounding box de todos los objetos
+            const bounds = obj.getBoundingRect();
+            width = bounds.width;
+            height = bounds.height;
+        } else {
+            // Para objetos individuales, usar getScaledWidth/Height
+            width = obj.getScaledWidth();
+            height = obj.getScaledHeight();
+        }
+        
+        const padding = 10;
+        tempCanvas.width = width + padding * 2;
+        tempCanvas.height = height + padding * 2;
+        
+        // Renderizar el objeto en el canvas temporal
+        isExporting = true;
+        await new Promise(resolve => {
+            obj.clone(async (cloned) => {
+                // Asegurar que el clon mantenga las mismas dimensiones
+                cloned.set({
+                    left: padding,
+                    top: padding,
+                    scaleX: obj.scaleX || 1,
+                    scaleY: obj.scaleY || 1,
+                    selectable: false,
+                    evented: false
+                });
+                
+                const tempFabricCanvas = new fabric.Canvas(null, {
+                    width: tempCanvas.width,
+                    height: tempCanvas.height,
+                    backgroundColor: 'transparent'
+                });
+                
+                tempFabricCanvas.add(cloned);
+                tempFabricCanvas.renderAll();
+                
+                // Renderizar un frame extra para asegurar que todo se dibuje correctamente
+                setTimeout(() => {
+                    // Convertir a blob con mejor calidad
+                    const dataUrl = tempFabricCanvas.toDataURL({
+                        format: 'png',
+                        multiplier: 2,
+                        quality: 1
+                    });
+                    
+                    // Convertir dataURL a blob
+                    fetch(dataUrl)
+                        .then(response => response.blob())
+                        .then(blob => {
+                            // Copiar al portapapeles
+                            navigator.clipboard.write([
+                                new ClipboardItem({ 'image/png': blob })
+                            ]).then(() => {
+                                console.log('Copiado al portapapeles del sistema');
+                                resolve();
+                            }).catch(err => {
+                                console.error('Error al escribir en portapapeles:', err);
+                                resolve();
+                            });
+                        });
+                }, 100);
+            });
+        });
+        isExporting = false;
+    } catch (error) {
+        console.error('Error al copiar al portapapeles:', error);
+        alert('No se pudo copiar al portapapeles. El navegador puede no soportar esta función.');
+    }
+}
+
+async function pasteFromSystemClipboard() {
+    try {
+        console.log('Intentando leer del portapapeles...');
+        const clipboardItems = await navigator.clipboard.read();
+        console.log('Items del portapapeles:', clipboardItems.length);
+        
+        let imageBlob = null;
+        let htmlContent = null;
+        let textContent = null;
+        
+        for (const item of clipboardItems) {
+            const types = item.types;
+            console.log('Tipos disponibles:', types);
+            
+            // Prioridad: intentar leer imagen primero
+            if (types.includes('image/png') && !imageBlob) {
+                const blob = await item.getType('image/png');
+                imageBlob = blob;
+                console.log('Imagen PNG encontrada');
+                break;
+            }
+            
+            if (types.includes('image/jpeg') && !imageBlob) {
+                const blob = await item.getType('image/jpeg');
+                imageBlob = blob;
+                console.log('Imagen JPEG encontrada');
+                break;
+            }
+            
+            if (types.includes('image/bmp') && !imageBlob) {
+                const blob = await item.getType('image/bmp');
+                imageBlob = blob;
+                console.log('Imagen BMP encontrada');
+                break;
+            }
+            
+            if (types.includes('text/html') && !htmlContent) {
+                const blob = await item.getType('text/html');
+                htmlContent = await blob.text();
+                console.log('HTML encontrado');
+            }
+            
+            if (types.includes('text/plain') && !textContent) {
+                const blob = await item.getType('text/plain');
+                textContent = await blob.text();
+                console.log('Texto plano encontrado');
+            }
+        }
+        
+        if (imageBlob) {
+            console.log('Procesando imagen del portapapeles...');
+            // Convertir blob a data URL
+            const reader = new FileReader();
+            reader.onload = async function(event) {
+                const dataUrl = event.target.result;
+                // Añadir imagen directamente al canvas
+                fabric.Image.fromURL(dataUrl, (img) => {
+                    if (!img) {
+                        console.error('No se pudo cargar la imagen');
+                        return;
+                    }
+                    img.set({
+                        left: 10 * SCALE,
+                        top: 10 * SCALE,
+                        selectable: true,
+                        evented: true
+                    });
+                    
+                    // Escalar si es muy grande
+                    const canvasWidth = PAPER_W_MM * SCALE;
+                    if (img.width > canvasWidth - 20 * SCALE) {
+                        img.scaleToWidth(canvasWidth - 20 * SCALE);
+                    }
+                    
+                    canvas.add(img);
+                    canvas.setActiveObject(img);
+                    canvas.requestRenderAll();
+                    saveState();
+                    console.log('Imagen añadida al canvas');
+                }, { crossOrigin: 'anonymous' });
+            };
+            reader.readAsDataURL(imageBlob);
+        } else if (htmlContent) {
+            console.log('Procesando HTML del portapapeles...');
+            await addHtmlFragmentAsFabricImage(htmlContent, {
+                tempWidth: 800,
+                svgHeight: 1200,
+                baseFontSize: '11px',
+                fontFamily: 'Arial'
+            });
+        } else if (textContent) {
+            console.log('Convirtiendo texto plano a tabla...');
+            const htmlTable = tabSeparatedToHtmlTable(textContent);
+            await addHtmlFragmentAsFabricImage(htmlTable, {
+                tempWidth: 800,
+                svgHeight: 1200,
+                baseFontSize: '11px',
+                fontFamily: 'Arial'
+            });
+        } else {
+            console.log('No se encontró contenido en el portapapeles');
+        }
+    } catch (error) {
+        console.error('Error al pegar desde el portapapeles:', error);
+    }
+}
+
+function tabSeparatedToHtmlTable(text) {
+    const rows = text.split('\n').filter(row => row.trim() !== '');
+    let html = '<table>';
+    
+    for (let i = 0; i < rows.length; i++) {
+        const cells = rows[i].split('\t');
+        html += '<tr>';
+        for (let j = 0; j < cells.length; j++) {
+            const cellContent = escapeHtml(cells[j]);
+            html += `<td>${cellContent}</td>`;
+        }
+        html += '</tr>';
+    }
+    
+    html += '</table>';
+    return html;
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 
@@ -704,7 +952,12 @@ function duplicateSelectionForDouble() {
 
 async function exportPDF() {
     const qtyInput = document.getElementById('print-qty');
-    const qty = parseInt(qtyInput.value) || 1;
+    let qty = parseInt(qtyInput.value) || 1;
+
+    function updateQty(newQty) {
+        qty = newQty;
+        qtyInput.value = qty;
+    }
     const mode = document.getElementById('label-mode').value;
     const overlay = document.getElementById('loading-overlay');
     const progressText = document.getElementById('progress-text');
@@ -730,7 +983,9 @@ async function exportPDF() {
             orientation: 'landscape',
             unit: 'mm',
             format: [PAPER_W_MM, PAPER_H_MM],
-            compress: true
+            compress: true, // Habilitar compresión para reducir tamaño y tiempo
+            putOnlyUsedFonts: true,
+            floatPrecision: 16 // Aumentar precisión de flotantes
         });
 
         const step = (mode === 'double') ? 2 : 1;
@@ -762,16 +1017,17 @@ async function exportPDF() {
 
             canvas.renderAll();
 
-            // Pequeña espera para que el navegador respire
-            await new Promise(resolve => setTimeout(resolve, 60));
+            // Espera reducida para que el navegador respire
+            await new Promise(resolve => setTimeout(resolve, 10));
 
             const dataUrl = canvas.toDataURL({
-                // PNG evita artefactos de compresión JPEG y mejora nitidez
-                format: 'png',
-                multiplier: 2.0
+                // WebP con mejor compresión que JPEG manteniendo calidad
+                format: 'webp',
+                quality: 0.92,
+                multiplier: 1.8  // Reducido ligeramente para acelerar adición al PDF
             });
 
-            pdf.addImage(dataUrl, 'PNG', 0, 0, PAPER_W_MM, PAPER_H_MM, '', 'FAST');
+            pdf.addImage(dataUrl, 'WEBP', 0, 0, PAPER_W_MM, PAPER_H_MM, '', 'FAST');
             
             const percent = Math.round((i / qty) * 100);
             progressText.innerText = `Procesando: ${percent}%`;
@@ -799,6 +1055,11 @@ async function exportPDF() {
 
 async function printLabels() {
     const qty = parseInt(document.getElementById('print-qty').value) || 1;
+const speedFactor = 0.5; // Factor para aumentar la velocidad
+
+for (let i = 1; i <= qty; i++) { // Incrementar de uno en uno para asegurar que se generen todas las etiquetas correctamente
+    // Lógica para generar etiquetas
+}
     const mode = document.getElementById('label-mode').value;
     const overlay = document.getElementById('loading-overlay');
     const progressText = document.getElementById('progress-text');
@@ -1007,7 +1268,30 @@ function addWhiteCover() {
 }
 
 // Intenta aproximar la fuente del PDF usando el nombre que devuelve pdf.js.
-// Esto suele mejorar el aspecto del texto importado (menos diferencia por fuente distinta).
+// Agregar un selector de fuente en la interfaz de usuario
+const fontSelector = document.createElement('select');
+fontSelector.id = 'font-selector';
+const fonts = ['Arial', 'Courier New', 'Georgia', 'Times New Roman', 'Verdana'];
+fonts.forEach(font => {
+    const option = document.createElement('option');
+    option.value = font;
+    option.textContent = font;
+    fontSelector.appendChild(option);
+});
+document.body.appendChild(fontSelector);
+
+fontSelector.addEventListener('change', (event) => {
+    setFontForImage(event.target.value);
+});
+function setFontForImage(font) {
+    canvas.getObjects().forEach(obj => {
+        if (obj.type === 'text') {
+            obj.set({ fontFamily: font });
+            obj.setCoords();
+            canvas.renderAll();
+        }
+    });
+}
 function resolveFontFromPdfJs(fontName) {
     if (!fontName) {
         return { fontFamily: 'Times New Roman', fontStyle: 'normal', fontWeight: 'normal' };
@@ -1027,6 +1311,377 @@ function resolveFontFromPdfJs(fontName) {
     return { fontFamily, fontStyle, fontWeight };
 }
 
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function argbToCssColor(argb) {
+    if (!argb) return '';
+    let s = String(argb).replace(/^#/, '').toUpperCase();
+    if (s.length === 8) s = s.slice(2);
+    if (s.length !== 6) return '';
+    return '#' + s;
+}
+
+function excelJsMeaningfulFill(cell) {
+    const f = cell.fill;
+    if (!f || f.type !== 'pattern') return false;
+    if (f.pattern === 'none') return false;
+    const fg = f.fgColor;
+    if (fg && fg.argb) {
+        const raw = String(fg.argb).replace(/^#/, '').toUpperCase();
+        const rgb = raw.length === 8 ? raw.slice(2) : raw;
+        if (rgb === 'FFFFFF' || raw === '00000000') return false;
+        return true;
+    }
+    if (fg && fg.theme !== undefined) return true;
+    return false;
+}
+
+/**
+ * Rango 0-based de toda la hoja: unión de !ref (SheetJS) y del grid de sheet_to_json (sin recortar celdas vacías).
+ */
+function fullSheetBoundsFromWorkbook(excelData, worksheet) {
+    if (!excelData || !excelData.length) return null;
+    
+    // Rango fijo para clientes específicos (fila 1-26, columna B-I)
+    // Filas: 0-25 (1-indexed: 1-26)
+    // Columnas: 1-8 (B-I) para incluir country of origin, importer, exporter
+    const r0 = 0;
+    const r1 = Math.min(25, excelData.length - 1);
+    const c0 = 1; // Columna B
+    const c1 = 8; // Columna I (expandido para incluir todas las columnas necesarias)
+    
+    console.log('Bounds fijos para cliente específico:', { r0, r1, c0, c1, totalRows: excelData.length });
+    return { r0, r1, c0, c1 };
+}
+
+function clampBoundsToMax(bounds, maxRows, maxCols) {
+    const rows = bounds.r1 - bounds.r0 + 1;
+    const cols = bounds.c1 - bounds.c0 + 1;
+    const truncated = rows > maxRows || cols > maxCols;
+    return {
+        r0: bounds.r0,
+        c0: bounds.c0,
+        r1: rows > maxRows ? bounds.r0 + maxRows - 1 : bounds.r1,
+        c1: cols > maxCols ? bounds.c0 + maxCols - 1 : bounds.c1,
+        truncated
+    };
+}
+
+function getExcelAoAText(aoa, r, c) {
+    const row = aoa[r];
+    if (!row) return '';
+    const v = row[c];
+    if (v === undefined || v === null) return '';
+    return String(v);
+}
+
+function buildExcelCellInlineStyle(cell) {
+    if (!cell) return '';
+    const parts = ['vertical-align:middle'];
+    const font = cell.font;
+    if (font) {
+        if (font.bold) parts.push('font-weight:700');
+        if (font.italic) parts.push('font-style:italic');
+        if (font.size) parts.push(`font-size:${font.size}pt`);
+        if (font.color && font.color.argb) {
+            const co = argbToCssColor(font.color.argb);
+            if (co) parts.push(`color:${co}`);
+        }
+    }
+    if (excelJsMeaningfulFill(cell)) {
+        const fg = cell.fill && cell.fill.fgColor;
+        if (fg && fg.argb) {
+            const bg = argbToCssColor(fg.argb);
+            if (bg) parts.push(`background-color:${bg}`);
+        }
+    }
+    const a = cell.alignment;
+    if (a && a.horizontal) parts.push(`text-align:${a.horizontal}`);
+    return parts.join(';');
+}
+
+function renderExcelGridHtml(excelData, xlsxWorksheet, excelJsWs, bounds0, images = []) {
+    const { r0, r1, c0, c1 } = bounds0;
+    console.log('renderExcelGridHtml - Bounds recibidos:', { r0, r1, c0, c1, nRows: r1 - r0 + 1, nCols: c1 - c0 + 1 });
+    const nRows = r1 - r0 + 1;
+    const nCols = c1 - c0 + 1;
+    const mergeSkip = new Set();
+    const mergeMaster = new Map();
+    const merges = (xlsxWorksheet && xlsxWorksheet['!merges']) || [];
+    
+    // Crear mapa de imágenes por posición
+    const imageMap = new Map();
+    try {
+        for (const img of images) {
+            try {
+                const { range } = img;
+                if (range && range.tl && range.tl.nativeRow !== undefined && range.tl.nativeCol !== undefined) {
+                    const key = `${range.tl.nativeRow},${range.tl.nativeCol}`;
+                    imageMap.set(key, img);
+                }
+            } catch (imgError) {
+                console.warn('Error al procesar imagen en mapa:', imgError);
+            }
+        }
+    } catch (mapError) {
+        console.warn('Error al crear mapa de imágenes:', mapError);
+    }
+
+    for (let mi = 0; mi < merges.length; mi++) {
+        const m = merges[mi];
+        const sr = m.s.r,
+            sc = m.s.c,
+            er = m.e.r,
+            ec = m.e.c;
+        const msr = Math.max(sr, r0),
+            msc = Math.max(sc, c0);
+        const mer = Math.min(er, r1),
+            mec = Math.min(ec, c1);
+        if (msr > mer || msc > mec) continue;
+        for (let rr = msr; rr <= mer; rr++) {
+            for (let cc = msc; cc <= mec; cc++) {
+                const tr = rr - r0,
+                    tc = cc - c0;
+                if (rr === msr && cc === msc) {
+                    mergeMaster.set(`${tr},${tc}`, {
+                        rowspan: mer - msr + 1,
+                        colspan: mec - msc + 1
+                    });
+                } else {
+                    mergeSkip.add(`${tr},${tc}`);
+                }
+            }
+        }
+    }
+
+    let html = '<table>';
+    for (let tr = 0; tr < nRows; tr++) {
+        html += '<tr>';
+        for (let tc = 0; tc < nCols; tc++) {
+            if (mergeSkip.has(`${tr},${tc}`)) continue;
+            const srSheet = r0 + tr,
+                scSheet = c0 + tc;
+            
+            // Verificar si hay una imagen en esta posición
+            const imgKey = `${srSheet},${scSheet}`;
+            const img = imageMap.get(imgKey);
+            
+            const raw = getExcelAoAText(excelData, srSheet, scSheet);
+            const text = raw.trim() === '' ? '' : escapeHtml(raw);
+            let cellContent = text;
+            
+            // Detectar si el texto contiene árabe para aplicar RTL
+            let isArabic = false;
+            try {
+                isArabic = containsArabic(raw);
+            } catch (arabicError) {
+                console.warn('Error al detectar árabe:', arabicError);
+            }
+            const dirAttr = isArabic ? ' dir="rtl"' : '';
+            
+            // Si hay imagen, agregarla al contenido de la celda
+            // TEMPORALMENTE DESHABILITADO: Las imágenes en base64 causan error en SVG foreignObject en file://
+            // if (img && img.base64) {
+            //     try {
+            //         let imgWidth = 50;
+            //         let imgHeight = 20;
+            //         
+            //         if (img.range && img.range.br && img.range.tl) {
+            //             const brCol = img.range.br.nativeCol !== undefined ? img.range.br.nativeCol : img.range.br.col;
+            //             const tlCol = img.range.tl.nativeCol !== undefined ? img.range.tl.nativeCol : img.range.tl.col;
+            //             const brRow = img.range.br.nativeRow !== undefined ? img.range.br.nativeRow : img.range.br.row;
+            //             const tlRow = img.range.tl.nativeRow !== undefined ? img.range.tl.nativeRow : img.range.tl.row;
+            //             
+            //             if (brCol !== undefined && tlCol !== undefined) {
+            //                 imgWidth = (brCol - tlCol + 1) * 50;
+            //             }
+            //             if (brRow !== undefined && tlRow !== undefined) {
+            //                 imgHeight = (brRow - tlRow + 1) * 20;
+            //             }
+            //         }
+            //         
+            //         cellContent = `<img src="${img.base64}" style="max-width: ${imgWidth}px; max-height: ${imgHeight}px; display: block;" alt="">${text}`;
+            //     } catch (imgRenderError) {
+            //         console.warn('Error al renderizar imagen:', imgRenderError);
+            //         // Si falla, usar valores por defecto
+            //         cellContent = `<img src="${img.base64}" style="max-width: 50px; max-height: 20px; display: block;" alt="">${text}`;
+            //     }
+            // }
+            
+            let style = '';
+            if (excelJsWs) {
+                try {
+                    const cell = excelJsWs.getCell(srSheet + 1, scSheet + 1);
+                    style = buildExcelCellInlineStyle(cell);
+                    // Si es árabe y no tiene alineación definida, usar alineación a la derecha
+                    if (isArabic && !style.includes('text-align')) {
+                        style += ';text-align:right';
+                    }
+                } catch (styleError) {
+                    console.warn('Error al obtener estilo de celda:', styleError);
+                }
+            }
+            const span = mergeMaster.get(`${tr},${tc}`);
+            const rs = span ? ` rowspan="${span.rowspan}"` : '';
+            const cs = span ? ` colspan="${span.colspan}"` : '';
+            const st = style ? ` style="${style}"` : '';
+            html += `<td${rs}${cs}${st}${dirAttr}>${cellContent}</td>`;
+        }
+        html += '</tr>';
+    }
+    html += '</table>';
+    return html;
+}
+
+async function buildExcelVisualHtml(arrayBuffer, xlsxWorksheet, excelData) {
+    let excelJsWs = null;
+    let excelJsImages = [];
+    console.log('ExcelJS disponible:', typeof ExcelJS !== 'undefined');
+    
+    if (typeof ExcelJS !== 'undefined') {
+        try {
+            const wb = new ExcelJS.Workbook();
+            await wb.xlsx.load(arrayBuffer);
+            excelJsWs = wb.worksheets[0];
+            console.log('Worksheet cargado:', !!excelJsWs);
+            
+            // Extraer imágenes incrustadas
+            if (excelJsWs) {
+                try {
+                    const images = excelJsWs.getImages();
+                    console.log('Imágenes encontradas en Excel:', images.length);
+                    
+                    for (const img of images) {
+                        try {
+                            const imageId = img.imageId;
+                            const media = wb.model && wb.model.media ? wb.model.media.find(m => m.index === imageId) : null;
+                            console.log('Imagen:', imageId, 'Media encontrado:', !!media);
+                            
+                            if (media && media.buffer) {
+                                const base64 = arrayBufferToBase64(media.buffer);
+                                const mimeType = media.extension === 'png' ? 'image/png' : 
+                                               media.extension === 'jpeg' || media.extension === 'jpg' ? 'image/jpeg' : 
+                                               'image/png';
+                                excelJsImages.push({
+                                    base64: `data:${mimeType};base64,${base64}`,
+                                    range: img.range,
+                                    editAs: img.editAs || 'absolute'
+                                });
+                                console.log('Imagen procesada correctamente');
+                            }
+                        } catch (imgError) {
+                            console.warn('Error al procesar imagen individual:', imgError);
+                        }
+                    }
+                    console.log('Total imágenes procesadas:', excelJsImages.length);
+                } catch (imagesError) {
+                    console.warn('Error al extraer imágenes:', imagesError);
+                }
+            }
+        } catch (e) {
+            console.warn('ExcelJS (estilos):', e);
+        }
+    }
+
+    const bounds0 = fullSheetBoundsFromWorkbook(excelData, xlsxWorksheet);
+    if (!bounds0) {
+        return { html: '<table></table>', truncated: false, rowCount: 0, colCount: 0, usedExcelJs: !!excelJsWs, images: excelJsImages };
+    }
+
+    const MAX_ROWS = 400;
+    const MAX_COLS = 60;
+    const clamped = clampBoundsToMax(bounds0, MAX_ROWS, MAX_COLS);
+    const { truncated, ...b } = clamped;
+    const html = renderExcelGridHtml(excelData, xlsxWorksheet, excelJsWs, b, excelJsImages);
+    const rowCount = b.r1 - b.r0 + 1;
+    const colCount = b.c1 - b.c0 + 1;
+    return { html, truncated, rowCount, colCount, usedExcelJs: !!excelJsWs, images: excelJsImages };
+}
+
+function arrayBufferToBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+}
+
+function containsArabic(text) {
+    if (!text) return false;
+    // Rango Unicode para caracteres árabes (0600-06FF)
+    const arabicRegex = /[\u0600-\u06FF]/;
+    return arabicRegex.test(text);
+}
+
+/**
+ * Renderiza un fragmento HTML en el lienzo como imagen Fabric (SVG foreignObject).
+ * Misma técnica que DOCX: conserva tablas, bordes y estructura en navegadores compatibles.
+ */
+function addHtmlFragmentAsFabricImage(htmlInner, options = {}) {
+    const tempWidth = options.tempWidth ?? 800;
+    const svgHeight = options.svgHeight ?? 1200;
+    const baseFontSize = options.baseFontSize ?? '13px';
+    const fontFamily = options.fontFamily ?? 'Segoe UI, Roboto, Helvetica, Arial, sans-serif';
+    const extraStyles = options.extraStyles ?? '';
+    const left = options.left ?? 10 * SCALE;
+    const top = options.top ?? 10 * SCALE;
+    const canvasWidth = PAPER_W_MM * SCALE;
+
+    const svg = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="${tempWidth}" height="${svgHeight}">
+                <foreignObject width="100%" height="100%">
+                    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: ${fontFamily}; font-size: ${baseFontSize}; color: black; background: white; padding: 10px;">
+                        <style>
+                            table { border-collapse: collapse; width: 100%; margin-bottom: 5px; table-layout: auto; }
+                            table, td, th { border: 1px solid #1a1a1a; }
+                            td, th { padding: 4px 6px; text-align: left; vertical-align: middle; overflow: hidden; word-wrap: break-word; white-space: pre-wrap; }
+                            p { margin: 0; line-height: 1.2; }
+                            img { max-width: 100%; height: auto; }
+                            ${extraStyles}
+                        </style>
+                        ${htmlInner}
+                    </div>
+                </foreignObject>
+            </svg>
+        `;
+
+    const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+
+    return new Promise((resolve, reject) => {
+        fabric.Image.fromURL(
+            url,
+            (img) => {
+                if (!img) {
+                    reject(new Error('No se pudo rasterizar el HTML'));
+                    return;
+                }
+                img.set({
+                    left,
+                    top,
+                    selectable: true,
+                    evented: true
+                });
+                if (img.width > canvasWidth - 20 * SCALE) {
+                    img.scaleToWidth(canvasWidth - 20 * SCALE);
+                }
+                canvas.add(img);
+                canvas.setActiveObject(img);
+                saveState();
+                resolve(img);
+            },
+            { crossOrigin: 'anonymous' }
+        );
+    });
+}
+
 async function processExcel(file) {
     if (!file) return;
 
@@ -1036,62 +1691,70 @@ async function processExcel(file) {
     progressText.innerText = 'Leyendo Excel...';
 
     const reader = new FileReader();
-    reader.onload = function(evt) {
+    reader.onload = async function (evt) {
         try {
-            const data = new Uint8Array(evt.target.result);
-            const workbook = XLSX.read(data, {type: 'array'});
+            const buf = evt.target.result;
+            const data = new Uint8Array(buf);
+            const workbook = XLSX.read(data, { type: 'array' });
             const firstSheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[firstSheetName];
-            
-            // Convertimos a JSON (array de arrays)
-            excelData = XLSX.utils.sheet_to_json(worksheet, {header: 1});
-            
+
+            excelData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
             if (!excelData || excelData.length === 0) {
-                alert("El Excel parece estar vacío");
-                overlay.style.display = 'none';
+                alert('El Excel parece estar vacío');
                 return;
             }
 
-            const importAsTable = confirm(`Se han cargado ${excelData.length} filas.\n\n¿Quieres importar las primeras filas como una TABLA en el diseño?\n(Cancela si prefieres usarlos para Automatización/Mail Merge)`);
+            const importAsImage = confirm(
+                `Se han cargado ${excelData.length} filas.\n\n` +
+                    '¿Importar la hoja al lienzo como IMAGEN (tabla con bordes y celdas combinadas cuando el archivo lo permite)?\n\n' +
+                    'Cancelar = solo datos para Automatización / Mail merge (nada se dibuja en el diseño).'
+            );
 
-            if (importAsTable) {
-                progressText.innerText = 'Creando tabla...';
+            if (importAsImage) {
+                const fontSizeInput = prompt('Tamaño de fuente para la importación (en px, ej: 10, 11, 12, 14):', '11');
+                const fontSize = parseInt(fontSizeInput) || 11;
                 
-                // Optimizamos Fabric para inserción masiva
-                canvas.renderOnAddRemove = false;
+                const fontFamilyInput = prompt('Tipo de fuente (ej: Arial, Segoe UI, Calibri, Times New Roman, Aptos Narrow).\n\nNota: Para texto en árabe, se recomienda Arial o Segoe UI:', 'Arial');
+                const fontFamily = fontFamilyInput || 'Arial';
+                
+                progressText.innerText = 'Generando imagen de la hoja...';
 
-                let startX = 20 * SCALE;
-                let startY = 20 * SCALE;
-                const rowHeight = 10 * SCALE;
-                const colWidth = 40 * SCALE;
+                const { html, truncated, rowCount, colCount, usedExcelJs } = await buildExcelVisualHtml(
+                    buf.slice(0),
+                    worksheet,
+                    excelData
+                );
 
-                // Limitamos a 50 filas para la tabla visual para evitar bloqueos
-                const rowsToProcess = excelData.slice(0, 50);
-
-                rowsToProcess.forEach((row, rowIndex) => {
-                    row.forEach((cell, colIndex) => {
-                        if (cell !== undefined && cell !== null && cell !== "") {
-                            const text = new fabric.IText(cell.toString(), {
-                                left: startX + (colIndex * colWidth),
-                                top: startY + (rowIndex * rowHeight),
-                                fontSize: 10 * SCALE,
-                                fontFamily: 'Arial'
-                            });
-                            canvas.add(text);
-                        }
-                    });
+                const svgH = Math.min(6000, Math.max(500, 80 + rowCount * 36));
+                await addHtmlFragmentAsFabricImage(html, {
+                    tempWidth: Math.min(1100, Math.max(480, colCount * 54 + 56)),
+                    svgHeight: svgH,
+                    baseFontSize: `${fontSize}px`,
+                    fontFamily: fontFamily
                 });
 
-                canvas.renderOnAddRemove = true;
-                canvas.requestRenderAll();
-                saveState();
-                alert("Tabla creada. Se han limitado los datos a las primeras 50 filas para mantener el rendimiento.");
+                if (truncated) {
+                    alert(
+                        'Hoja insertada como imagen (solo se muestran las primeras 400 filas × 60 columnas por rendimiento). Los datos completos siguen disponibles para automatización.'
+                    );
+                } else if (usedExcelJs) {
+                    alert(
+                        'Hoja insertada como imagen con el rango completo de la hoja. Se aplican colores de celda, negrita y alineación cuando Excel guarda esos estilos (ExcelJS).\n\n' +
+                            'Si un color no aparece, en Excel usa un relleno estándar o RGB en lugar de solo un color de tema.'
+                    );
+                } else {
+                    alert(
+                        'Hoja insertada como imagen. No está disponible ExcelJS (revisa la conexión o que index.html cargue exceljs.min.js); los estilos de celda pueden verse limitados.'
+                    );
+                }
             } else {
-                alert("Excel cargado correctamente para Automatización. Ahora puedes vincular campos a tus textos.");
+                alert('Excel cargado correctamente para Automatización. Ahora puedes vincular campos a tus textos.');
             }
         } catch (err) {
             console.error(err);
-            alert("Error al procesar el archivo Excel");
+            alert('Error al procesar el archivo Excel');
         } finally {
             overlay.style.display = 'none';
         }
@@ -1116,60 +1779,18 @@ async function processDocx(file) {
         
         if (!html.trim()) {
             alert("No se pudo extraer contenido del archivo DOCX o está vacío.");
-            overlay.style.display = 'none';
             return;
         }
 
-        // Para renderizar HTML en el Canvas de Fabric, usamos el truco del SVG foreignObject
-        // Esto permite mantener el formato original (tablas, negritas, etc.)
-        const canvasWidth = PAPER_W_MM * SCALE;
-        const tempWidth = 800; // Ancho virtual para el renderizado
-        
-        const svg = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="${tempWidth}" height="1200">
-                <foreignObject width="100%" height="100%">
-                    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: black; background: white; padding: 10px;">
-                        <style>
-                            table { border-collapse: collapse; width: 100%; margin-bottom: 5px; table-layout: fixed; }
-                            table, td, th { border: 1px solid black; }
-                            td, th { padding: 3px 5px; text-align: left; overflow: hidden; word-wrap: break-word; }
-                            p { margin: 0; line-height: 1.2; }
-                            img { max-width: 100%; height: auto; }
-                        </style>
-                        ${html}
-                    </div>
-                </foreignObject>
-            </svg>
-        `;
-
-        const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-        
-        fabric.Image.fromURL(url, (img) => {
-            if (!img) {
-                throw new Error("Error al crear la imagen del DOCX");
-            }
-
-            img.set({
-                left: 10 * SCALE,
-                top: 10 * SCALE,
-                selectable: true,
-                evented: true
-            });
-
-            // Ajustar el tamaño si es muy grande
-            if (img.width > canvasWidth) {
-                img.scaleToWidth(canvasWidth - 20 * SCALE);
-            }
-
-            canvas.add(img);
-            canvas.setActiveObject(img);
-            saveState();
-            overlay.style.display = 'none';
-        }, { crossOrigin: 'anonymous' });
-
+        await addHtmlFragmentAsFabricImage(html, {
+            tempWidth: 800,
+            svgHeight: 1200,
+            baseFontSize: '13px'
+        });
     } catch (err) {
         console.error(err);
         alert("Error al procesar el archivo DOCX con formato");
+    } finally {
         overlay.style.display = 'none';
     }
 }
@@ -1497,7 +2118,7 @@ function addQRCode() {
 
     // Usamos una API externa para generar el QR (más fiable)
     const url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}`;
-    
+
     fabric.Image.fromURL(url, (img) => {
         if (!img) {
             alert("Error al cargar el código QR. Revisa tu conexión.");
