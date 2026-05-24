@@ -1021,13 +1021,13 @@ async function exportPDF() {
             await new Promise(resolve => setTimeout(resolve, 10));
 
             const dataUrl = canvas.toDataURL({
-                // WebP con mejor compresión que JPEG manteniendo calidad
-                format: 'webp',
-                quality: 0.92,
-                multiplier: 1.8  // Reducido ligeramente para acelerar adición al PDF
+                // JPEG con muy alta calidad para máxima nitidez
+                format: 'jpeg',
+                quality: 0.95,
+                multiplier: 2.0  // Máxima calidad
             });
 
-            pdf.addImage(dataUrl, 'WEBP', 0, 0, PAPER_W_MM, PAPER_H_MM, '', 'FAST');
+            pdf.addImage(dataUrl, 'JPEG', 0, 0, PAPER_W_MM, PAPER_H_MM, '', 'FAST');
             
             const percent = Math.round((i / qty) * 100);
             progressText.innerText = `Procesando: ${percent}%`;
